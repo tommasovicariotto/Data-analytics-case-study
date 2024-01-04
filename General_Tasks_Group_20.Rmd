@@ -1,0 +1,575 @@
+---
+title: "General_Tasks_Group_20"
+author: "Fernando Marquez, Tommaso Vicariotto"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: paper
+    highlight: tango
+    toc: true
+    section_number: true
+    toc_float: true
+    toc_depth: 2
+    collapsed: true
+    smooth_scroll: true
+---
+
+<script>
+   $(document).ready(function() {
+     $head = $('#header');
+     $head.prepend('<img src=\"Additional_Files/Logo Company.png\" style=\"float: right;width: 150px;\"/>')
+   });
+</script>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Case Study Group 20.
+
+Importing and loading the necessary packages for the analysis. 
+
+```{r message=FALSE, warning=FALSE}
+if(!require("install.load")){
+   install.packages("install.load")
+}
+library('install.load')
+install_load("readr", "readxl", "tidyr", "dplyr", "stringr", "tidyverse", "knitr", "rmarkdown", "ggplot2","lubridate", "fitdistrplus","stats4","MASS", "logspline", "gamlss","gamlss.add", "gamlss.dist","DiagrammeR", "plotly","kableExtra")
+
+```
+
+# Task 1 - Logistics distribution
+
+Create a distribution for the logistics delay of component „K7”. Use the production date (“Produktionsdatum”) from the data set “Komponente_K7.csv” and the receiving date of incoming goods (“Wareneingang”) from “Logistikverzug_K7.csv” (logistics delay). You can assume that produced goods are issued one day after production date. For the model design in R, create a new data set “Logistics delay” that contains the required information from both data sets.
+
+----
+
+
+## Generation of the Logistics Delay data set
+```{r message=FALSE, warning=FALSE}
+#import the relevant tables
+comp_7 <- read_csv2("Data/Logistikverzug/Komponente_k7.csv")
+log_delay_7 <- read_csv("Data/Logistikverzug/Logistikverzug_K7.csv")
+
+
+#check if there are NA values
+sum(is.na(comp_7))
+sum(is.na(log_delay_7))
+
+#create the joined dataset
+logistics_delay <- comp_7 %>%
+  inner_join(log_delay_7, by = c("IDNummer"), suffix = c("_comp", "_log")) %>% #join the two ds through the ID number column
+  dplyr::select(Produktionsdatum, Wareneingang) %>% #keep only the columns that are important for the analysis 
+  mutate(Produktionsdatum=as.Date(Produktionsdatum), Wareneingang=as.Date(Wareneingang)) %>% #turn the values into date
+  mutate(issuing_date=(Produktionsdatum+1)) %>% #goods are issued one day after their production
+  mutate(delay=as.integer(Wareneingang-issuing_date)) %>% #create a column "delay" with the difference btw receipt and production
+  mutate(weekday_issuing=wday(issuing_date-1), weekday_waren=wday(Wareneingang-1)) # %>% #-1 bc, after checking online, the calculated weedkday was wrong by 1
+
+rm(comp_7) #remove the old datasets from the global environment
+rm(log_delay_7) 
+
+#create a new csv file called "Logistics Delay" in the Logistikverzug folder
+write.csv2(logistics_delay, "Data/Logistikverzug/Logistics Delay.csv", row.names=FALSE)
+```
+
+## Task 1a - Distribution Analysis 
+
+How is the logistics delay distributed? Justify your choice with statistical tests and briefly describe your approach.
+
+----
+
+The distribution analysis will be performed following an iterative process. The CUllen & Frey graphs for both the discrete and the continuous case will give information about the possible best-fitting theoretical models. FUrthermore, the analysis will be based on a graphical comparison and on goodness of fitting parameters.   
+```{r message=FALSE, warning=FALSE}
+library(fitdistrplus)
+
+#create a variable x that calls the "delay" variable of the new dataset
+x <- logistics_delay$delay
+
+#Result summary of the parameters of our model, to start the model distribution analysis 
+summary(x)
+```
+
+### Discrete Cullen & Frey graph
+The distribution is discrete, because it is based on single days of delay, without continuity. The blue point, called "observation", gives the values of Kurtosis and Skeweness of the delay model. The discrete theoretical distributions that will be compared with the empirical one are the Normal, the Negative binomial and the Poisson. 
+```{r message=FALSE, warning=FALSE}
+descdist( data = x , discrete = T)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Comparison with the normal distribution
+norm_x <- fitdist(x,"norm", discrete=TRUE)
+plot(norm_x)
+
+#Results of the norm distribution
+summary(norm_x)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Comparison with the negative binomial distribution
+nbinom_x <- fitdist(x,"nbinom", discrete=TRUE)
+plot(nbinom_x)
+
+#Results of the negative binomial distribution
+summary(nbinom_x)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Comparison with the Poisson distribution
+pois_x <- fitdist(x,"pois", discrete=TRUE)
+plot(pois_x)
+
+#Results of the poisson distribution
+summary(pois_x)
+```
+
+### Discussion on the results
+The empirical model is better described by the normal distribution. 
+Indeed, for both Poisson's and negative binomial's distributions, a non-negligible difference can be noticed from the density and cumulative distribution function graphs.
+
+### Continuous Cullen & Frey graph
+A second approach in finding the best fitting model is conducted with the continuous distributions, in a discretized form: using bins to represent the continuous models.
+In this case, the most promising models, offered by the Cullen & Frey diagram, are the Weibull, log-normal, gamma and beta.
+
+The beta model is immediately rejected, because all the values of this type of distribution must be between 0 and 1. 
+```{r message=FALSE, warning=FALSE}
+# Continuous case: discrete is false by default
+descdist(x)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Comparison with the log-normal distribution
+lnorm_x <- fitdist(x,"lnorm", discrete=TRUE)
+plot(lnorm_x)
+
+#Results of the log-normal distribution
+summary(lnorm_x)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Comparison with the gamma distribution
+gamma_x <- fitdist(x,"gamma", discrete=TRUE)
+plot(gamma_x)
+
+#Results of the gamma distribution
+summary(gamma_x)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Comparison with the weibull distribution
+weib_x <- fitdist(x,"weibull", discrete=TRUE)
+plot(weib_x)
+
+#Results of the weibull distribution
+summary(weib_x)
+```
+
+### Final considerations and best-fitting model decision
+Following the discrete approach, the normal distribution is the one that best fits the data of the case study. 
+Whereas, by extending the analysis to the continuous cases, the best-fitting model is the log-normal. This can be noticed by simply looking at the graphs plotted with the fitdist function. 
+Nonetheless, relatively good results are achieved with the gamma distribution too.
+Further analysis can be developed through the goodness of fit criteria.
+
+
+A low value of chi-squared statistics suggests a high correlation between the two distributions.
+
+In this case, all the values are extremely high: much bigger than what is considered acceptable by the critical table. 
+In particular, gamma has the lowest value and log-norm the highest one. Nevertheless, a chi-squared p-value of 0 for all three cases indicates that the null hypothesis should be rejected, and an alternative one should be followed. Hence, the wrong results of the chi-squared values are confirmed false by the p-values.
+
+The Akaike's Information Criterion (AIC) and the Bayesian Information Criterion (BIC) are mathematical criteria for model selection, and will be used for the analysis. 
+AIC estimates the relative amount of information lost by a given model: the less information a model loses, the higher the quality of that model. 
+Th BIC is an increasing function of the error variance.
+Therefore, the model is preferred when the values of AIC and BIC are low.
+
+This confirms the better fitting of the log-Normal model, which has the lowest values of AIC and BIC.
+```{r message=FALSE, warning=FALSE}
+#Goodness-of-fitting parameters analysis - norm, log-norm and gamma distributions
+gofstat(list(norm_x,lnorm_x, gamma_x),fitnames = c("Normal", "log-Normal", "Gamma"))
+```
+
+## Task 1b - Mean of the delay
+
+Determine the mean of the logistics delay (watch out for weekends). Please interpret this number and discuss possible alternatives.
+
+----
+
+The weekends will not interfere with the calculation of the logistics delay, because - as it can be noticed from the logistics delay dataset - the operations of production, issuing and reception of goods are performed in all the days of the week, weekends included. 
+```{r message=FALSE, warning=FALSE}
+mean_value <- mean(logistics_delay$delay) #calculate the mean 
+print(paste("The mean of the delay is:", mean_value))
+
+#double check that the operations are conducted also in the weekend
+weekend_days <- c(6,7)
+weekend_days %in% logistics_delay$weekday_issuing
+weekend_days %in% logistics_delay$weekday_waren
+```
+
+```{r message=FALSE, warning=FALSE}
+#calculate the mean in the case there were no operations in the weekend
+logistics_delay_Noweekend <- logistics_delay %>%
+  filter(weekday_issuing != 6 &
+           weekday_issuing != 7)%>%
+  filter(weekday_waren != 6 &
+           weekday_waren != 7)
+
+sort(unique(logistics_delay_Noweekend$weekday_issuing))
+sort(unique(logistics_delay_Noweekend$weekday_waren))
+
+meanNoWeekend <- mean(logistics_delay_Noweekend$delay)
+print(paste("Mean without operations in the weekend:", meanNoWeekend))
+#The mean value of the delay is higher, as expected. 
+```
+
+
+## Task 1c - Histogram and density visualization
+
+Visualize the distribution in an appropriate way by displaying the histogram and the density function using “plotly”. Please describe how you selected the size of the bins.
+
+----
+
+The distribution is plotted both with the plot_ly and the ggplotly functions.
+
+The selected size of the bin is 1. This size allows to have a complete visualization of the values, without interruption on the x-axis. In the ggplot case, the density curve has been modified with the "adjust" argument of geom_density, which is a multiplicate bandwidth adjustment. This allows to keep a binwidth of 1, thus an appropriate data visualization.  
+
+```{r message=FALSE, warning=FALSE}
+#Plotting histogram and density with the plot_ly function
+
+#library(plotly)
+density <- density(x) #generate a variable to call the function density() in the plot
+
+plot_ly(x = x) %>% 
+  add_histogram(name = "Histogram") %>% #create the histogram and add the density curve
+  add_lines(x = density$x, y = density$y, fill = "tozeroy", yaxis = "y2", name = "Density") %>% #"tozeroy" to fill the plot area; "yaxis" adds a second y-axis
+  layout(yaxis2 = list(overlaying = "y", side = "right")) #"overlaying" allows to have the overlay of the two plots; "side" moves the 2nd y-axis reference to the right 
+```
+
+At first, the graph has been plotted with a binwidth of 0.185, in order to have a match between the peak values of the histogram and the ones of the density.
+```{r}
+#Plot histogram and desnity with ggplot
+b <- ggplot(logistics_delay, aes(x = x)) + 
+        geom_histogram(aes(y=..density..), 
+                       binwidth=0.185, fill="blue", color="black") + 
+        scale_x_continuous(breaks = seq(0,15,1)) + #to have all the integers from o to 13 on the x-axis
+        geom_density(col="red") +
+        labs(title = "Logistics delay", x = "Days of delay", y = "Density") #add the labels
+
+ggplotly(b) #convert a ggplot2 to a plotly object
+```
+
+Afterwards, an adjustment value has been used, in order to have a continuous representation of the density function, over the histogram.
+```{r}
+#Plotting histogram and density with ggplot
+a <- ggplot(logistics_delay, aes(x = x)) + 
+        geom_histogram(aes(y=..density..), 
+                       binwidth=1, fill="blue", color="black") + 
+        scale_x_continuous(breaks = seq(0,15,1)) + #to have all the integers from o to 13 on the x-axis
+        geom_density(col="red", adjust=5.9) +
+        labs(title = "Logistics delay", x = "Days of delay", y = "Density") #add the labels
+
+ggplotly(a) #convert a ggplot2 to a plotly object
+```
+
+
+## Task 1d - Decision tree
+
+Please describe how you proceed, if you have to create a decision tree, which is describing the classification problem to classify whether the component (K7) is defective (Fehlerhaft) or not?
+
+----
+
+The definition of a decision tree is based on a classification problem. Therefore, it represents the classic work environment in which supervised learning is exploited.
+
+The goal is to train a decision tree that predicts whether the component K7 is defective or not, depending on some specific characteristics (attributes).
+
+Origin has only 1 value, thus it is not an informative attribute.
+Whereas, maunf_num and work_num are strictly related, hence only one of them can be exploited.
+The decision tree will be based on the manufacturer (Herstellernummer), and on the production date origin. However, the latter can assume 2924 values: too many to analyze. Therefore, the manufacturer number will be the only root node in the following simplified decision tree. 
+
+The probability of having a defective component is slightly higher for body parts produced by the manufacturer 112: 10.02447% vs the 10.02251% of manufacturer 114. However, the probability of defectiveness is relatively low for both the cases. Hence, each case should be investigated individually, through the production date origin. 
+
+```{r message=FALSE, warning=FALSE}
+#Import the dataset
+
+#create fz to properly read the txt file
+read_txt <- function(path, replacement){
+  path %>% 
+    read_file() %>%
+    str_replace_all(replacement) %>%
+    str_replace_all(c("\n\"\\d+\"," = "\n", "\nNA," = "\n")) %>%
+    read_delim(show_col_types = FALSE) 
+}
+
+#Load K7
+comp_k7 <- read_txt("Data/Komponente/Komponente_K7.txt", 
+                   replacement = c("\t" = ",", "\r" = "\n")) %>%
+           dplyr::select(-Fehlerhaft_Datum, -Fehlerhaft_Fahrleistung, -X1) #remove date and km at which defectiveness was found
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#list all the attributes values
+manuf_num <- comp_k7$Herstellernummer %>% unique()
+work_num <- comp_k7$Werksnummer %>% unique()
+prod_date <- comp_k7$Produktionsdatum_Origin_01011970 %>% unique()
+origin <- comp_k7$origin %>% unique()
+
+#filter for the two values of interest
+comp_k7_114 <- comp_k7 %>% filter(Herstellernummer == manuf_num[1])
+comp_k7_112 <- comp_k7 %>% filter(Herstellernummer == manuf_num[2])
+
+#sum the values of the defectiveness column to find their number, because they only assume values of 0 or 1.
+yes_112 <- as.integer(sum(comp_k7_112$Fehlerhaft)) #number of defectiveness for manuf 112
+yes_114 <- as.integer(sum(comp_k7_114$Fehlerhaft)) #number of defectiveness for manuf 114
+#an alternative would be to filter for Fehlerhaft == 1 and then count the rows of the filtered ds
+
+tot_cases <- nrow(comp_k7_112) #same for both 112 and 114
+
+rate_112 <- yes_112/tot_cases
+rate_114 <- yes_114/tot_cases
+
+print(paste("The rate of defective components with manufacturer number 112 is:", rate_112))
+print(paste("The rate of defective components with manufacturer number 114 is:", rate_114))
+
+#crate the flowchart
+grViz("digraph flowchart {
+      # node definitions with substituted label text
+      node [fontname = Helvetica, shape = rectangle]        
+      tab1 [label = '@@1']
+      tab2 [label = '@@2']
+      tab3 [label = '@@3']
+      tab4 [label = '@@4']
+      tab5 [label = '@@5']
+      tab6 [label = '@@6']
+
+      # edge definitions with the node IDs
+      tab1 -> tab2;
+      tab2 -> tab3 -> tab6
+      tab2 -> tab4 -> tab5
+      }
+
+      [1]: 'Is the component defective?'
+      [2]: 'Manufacturer number'
+      [3]: '114'
+      [4]: '112'
+      [5]: 'yes/no'
+      [6]: 'yes/no'
+      ")
+```
+
+# Task 2 - Database structure
+
+Why does it make sense to store the available data in separate files instead of saving everything
+in a huge table? Name at least four benefits. 
+
+----
+
+1.	Data can be divided into different files according to some categories or characteristics. In this way, it is easier to reach a specific piece of data and a better overall order and flexibility can be achieved.
+2.	The selection and use of specific data require less processing time, as the dataset to be loaded have a smaller size. 
+3.	The smaller dataset is less prone to bugs, moreover, in the event of file corruption, not all data are lost.
+4.	Sharing project parts with other users is more straightforward and requires less memory occupation for the receiver. 
+
+The available tables represent a typical data base structure. How is it called?
+
+The database structure of the available tables is a multi-file relational (or structural) database. The data are divided into many tables, that are linked one to another through some specific keys. For instance, the datasets “Bestandteile_Fahrzeug_ID” relate to “Fahrzeug_ID”, through the key variable “ID_Fahrzeug”. The programming interface for database interaction, used in this type of database structure, is the Structured Query Language (SQL). The alternative database structure is called "single file", and all the contained data are stored in a single flat file. 
+
+
+# Task 3 - Components T16 in Adelshofen' vehichles
+
+How many of the components T16 ended up in vehicles registered in Adelshofen?
+
+----
+
+The dataset containing the information of part 16, and the dataset of the components in which part 16 was installed were manually imported and cleaned.The latter were filtered and merged, to create a final dataset with all the IDs of the components in which part 16 was present. Later, these IDs have been used to filter the datasets of the four car types and find the IDs of the cars that contain those specific components (thus, part 16). 
+
+Finally, a new dataset with the vehicle IDs has been created and exploited to filter the registration file, containing all the IDs of the car registered in Adhelshofen. It was therefore possible to complete the calculation required by the task.
+```{r message=FALSE, warning=FALSE}
+#Loading the functions to clean the txt file
+
+Drop_Cols <- function(df){
+  if('V1' %in% names(df)) {df <- df %>% dplyr::select(-V1)}
+  if('X1' %in% names(df)) {df <- df %>% dplyr::select(-X1)}
+  if('X' %in% names(df)) {df <- df %>% dplyr::select(-X)}
+  if('...1' %in% names(df)) {df <- df %>% dplyr::select(-...1)}
+  return(df)
+}
+
+#Function to fix unstructured Data
+Fix_unstruct_dat <- function(data){
+  #If the dataset has 14 columns we must convert it to only 7 columns:
+  if (ncol(data) == 14) {
+    df1 <- data[,1:7]
+    names(df1) <- sub("\\.x", "", names(df1))
+    df2 <- data[,8:14]
+    names(df2) <- sub("\\.y", "", names(df2))
+    
+    #combine dataframes
+    df <- dplyr::bind_rows(df1, df2) %>% distinct() %>% drop_na(Werksnummer)
+    return(df)
+    
+    #Same logic as in the second case when it has 21: 
+  } else if(ncol(data) == 21) {
+    
+    df1 <- data[,1:7]
+    names(df1) <- sub("\\.x", "", names(df1))
+    df2 <- data[,8:14]
+    names(df2) <- sub("\\.y", "", names(df2))
+    df3 <- data[,15:21]
+    
+    # Combine Datasets
+    df <- dplyr::bind_rows(df1, df2, df3) %>% distinct() %>% drop_na(Werksnummer)
+    return(df)
+  } else {
+    print("Data cannot be processed with this function yet, prior changes are required!")
+  }
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+#Import and clean the dataset of Part 16
+P_16 <- read_txt("Data/Einzelteil/Einzelteil_T16.txt", 
+                 replacement = c(" \\| \\| " = ",", "\t" = "\n"))
+
+P_16 <- P_16 %>% Drop_Cols() %>% Fix_unstruct_dat()
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Import the files with the components in which the part 16 is installed 
+Bes_Komp_K2ST2 <- read_csv2("Data/Komponente/Bestandteile_Komponente_K2ST2.csv")
+Bes_Komp_K2LE2 <- read_csv2("Data/Komponente/Bestandteile_Komponente_K2LE2.csv")
+
+header_K2ST2 <- colnames(Bes_Komp_K2ST2) #look for the columns names of the dataset, to check the presence of part 16
+header_K2LE2 <- colnames(Bes_Komp_K2LE2) #look for the columns names of the dataset, to check the presence of part 16
+
+Bes_Komp_K2ST2 <- Bes_Komp_K2ST2 %>% dplyr::select(c("ID_T16", "ID_K2ST2")) #keep only the useful variables
+Bes_Komp_K2LE2 <- Bes_Komp_K2LE2 %>% dplyr::select(c("ID_T16", "ID_K2LE2"))
+
+#Merge the two datasets and create a variable ID_Comp that contains all the IDs of the components in which part 16 is installed 
+final_Best_Komp <- dplyr::bind_rows(Bes_Komp_K2LE2, Bes_Komp_K2ST2) %>% #merge the datasets combining the rows
+  pivot_longer(cols=c("ID_K2ST2", "ID_K2LE2"), values_to = "ID_Comp") %>% #merge the two variables into a new variable ID_Comp
+  drop_na() %>% #remove NA values
+  dplyr::select(-name) #remove name variable
+
+#Import the 4 car types and apply filtering to know if they contain the components made with part 16
+type11 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM1_Typ11.csv")# %>%
+
+#The components made with part 16 are seats -> ID_Sitze variable will be investigated
+type11_filt <- final_Best_Komp %>%
+  left_join(type11, by = c("ID_Comp" = "ID_Sitze")) %>%  #filter for the components that contain part 16
+  drop_na() %>%                                          #remove NA values
+  dplyr::select("ID_Comp","ID_Fahrzeug")                 #keep only the important columns
+  
+#Apply the same procedure to the other car types
+type12 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM1_Typ12.csv")
+type12_filt <- final_Best_Komp %>% left_join(type12, by = c("ID_Comp" = "ID_Sitze")) %>% drop_na() %>% dplyr::select("ID_Comp","ID_Fahrzeug")
+
+type21 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM2_Typ21.csv") 
+type21_filt <- final_Best_Komp %>% left_join(type21, by = c("ID_Comp" = "ID_Sitze")) %>% drop_na() %>% dplyr::select("ID_Comp","ID_Fahrzeug")
+
+type22 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM2_Typ22.csv") #%>%
+type22_filt <- final_Best_Komp %>% left_join(type22, by = c("ID_Comp" = "ID_Sitze")) %>% drop_na() %>% dplyr::select("ID_Comp","ID_Fahrzeug")
+
+#Merge all the IDs of the cars that contain part 16
+cars_with_p16 <- dplyr::bind_rows(type11_filt, type12_filt, type21_filt, type22_filt) %>% #merge the datasets combining the rows
+  dplyr::select("ID_Fahrzeug") %>% #keep only the car ID variable
+  distinct() #check that there are not duplicated rows
+
+#Import the final dataset
+registration_ds <- read_csv2("Data/Zulassungen/Zulassungen_alle_Fahrzeuge.csv") 
+
+#Merge the two datasets
+Adelshofen_cars_with_p16<- cars_with_p16 %>%
+  left_join(registration_ds, by = c("ID_Fahrzeug" = "IDNummer")) %>% #merge the datasets, filtering for the IDs of the car containing part 16
+  filter(Gemeinden == "ADELSHOFEN") %>% #filter for vehicles registered in Adelshofen
+  dplyr::select(-...1, -Zulassung) %>% distinct()
+
+print(paste("The number of components T16 ended up in vehicles registered in Adelshofen is:", nrow(Adelshofen_cars_with_p16))) #convert into char and print
+```
+
+# Task 4 - Data types
+
+Which data types do the attributes of the registration table “Zulassungen_aller_Fahrzeuge” have? Put your answers into a table which is integrated into your Markdown document and describe the characteristics of the data type(s).
+
+----
+
+The data types of the dataset Zulassungen_alle_Fahrzeuge are: a numeric, two characters, and a date. 
+
+The numeric data type includes all the real numbers, with or without decimal values.
+The character data type is used to specify character or string values in a variable.
+The date data type dates is stored internally as the number of days or seconds from some reference date.
+```{r message=FALSE, warning=FALSE}
+Zulassungen_alle_Fahrzeuge <- read_csv2("Data/Zulassungen/Zulassungen_alle_Fahrzeuge.csv")  
+
+# create matrix with 4 columns and 2 rows
+data= matrix(c(class(1), class("12-1-12-1"), class("LEIPZIG"), "date", 1, "12-1-12-1", "LEIPZIG", "2009-01-01"), ncol=4, byrow=TRUE)
+# specify the column names and row names of matrix
+colnames(data) =  colnames(Zulassungen_alle_Fahrzeuge)
+rownames(data) <- c('Data type','Ex. value')
+final=as.table(data) #convert the matrix into a table
+kable(final)%>%
+  kable_styling(bootstrap_options = "striped",full_width = F, position = "center") %>% column_spec(1:ncol(final), width_max = "12em", width_min = "8em")#show the table
+```
+
+# Task 5 - Storage of the records
+
+You want to publish your application. Why does it make sense to store the records on the database of a server? Why can’t you store the records on your personal computer? 
+ 
+----
+
+1.	Server databases can be accessed by multiple users at the same time and are concurrent: simultaneous accesses do not cause the corruption of the data. 
+2.	They are fault tolerant. If a problem occurs to the computer, the data are still accessible through the server database, thus, they are not lost. 
+3.	The server storage is expandable, hence the memory is not a constraint for the maximum size of the files, as it is in the case of a personal computer. 
+4.	They allow advanced security measures, which prevent unauthorized access, and ensures the confidentiality, integrity, and availability of the data.
+
+What is an easy way to make your application available to your customers? Please name 4 aspects.
+
+1.  Make the application as user-friendly as possible, and easily accessible via the most important App Stores.
+2.  Add multiple languages translation of the application.
+3.  Create an email marketing campaign, exploiting the involved car manufacturers as intermediaries.
+4.  Create a social media marketing campaign, through ads and petrolhead influencers. 
+
+
+# Task 6 - Find the registration community
+
+On 11.08.2010 there was a hit and run accident. There is no trace of the license plate of the car involved in the accident. The police asks for your help, as you work for the Federal Motor Transport Authority, and asks where the vehicle with the body part number “K5-112-1122-79” was registered.
+
+----
+
+The data sets of the 4 possible car types (type11, type12, type21, and type 22) have been imported, and filtered to find where the vehicle with the body part K5-112-1122-79 comes from. Once the ID of that vehicle has been found, it was possible to look in the registration dataset and filter its origin. 
+```{r message=FALSE, warning=FALSE}
+#import the datasets of the 4 vehicle types and filter them to look for the right car body number
+car_type11 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM1_Typ11.csv") %>%
+  filter(ID_Karosserie == "K5-112-1122-79")
+
+car_type21 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM2_Typ21.csv") %>%
+  filter(ID_Karosserie == "K5-112-1122-79")
+
+car_type22 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM2_Typ22.csv") %>%
+  filter(ID_Karosserie == "K5-112-1122-79")
+
+#contains the data of the vehicle we are looking for
+car_type12 <- read_csv2("Data/Fahrzeug/Bestandteile_Fahrzeuge_OEM1_Typ12.csv") %>%
+  filter(ID_Karosserie == "K5-112-1122-79")
+```
+
+Conclude the analysis
+```{r message=FALSE, warning=FALSE}
+#Move to the second dataset; filter it for the ID_Fahrzeug previously found
+typ_12 <- read_csv2("Data/Fahrzeug/Fahrzeuge_OEM1_Typ12.csv") %>%
+  filter(ID_Fahrzeug == "12-1-12-82")
+
+#check variables present in both datasets
+typ_12[, colnames(typ_12) %in% colnames(car_type12)]
+typ_12[, colnames(typ_12) %in% colnames(Zulassungen_alle_Fahrzeuge)]
+
+#Move to the final dataset: filter for the IDNummer previously found
+Registr_veh <- Zulassungen_alle_Fahrzeuge %>%
+  filter(IDNummer=="12-1-12-82") %>%
+  dplyr::select(Gemeinden) #select only the column of interest 
+
+print(paste("The damaged vehicle was registred in", Registr_veh[,])) #paste converts into char and concatenates the vectors
+```
+
+
+
+
